@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Képszín‑elemző – rádob, beilleszt, feltölt</title>
+  <style>
+    :root {
+      --bg: #0f1115; /* sötét téma alap */
+      --panel: #161922;
+      --muted: #9aa4b2;
+      --text: #e6ebf2;
+      --accent: #4f8cff;
+      --accent-2: #22c55e;
+      --card: #1b2030;
+      --border: #2a3244;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 800px at 20% -10%, #1b2540 0%, var(--bg) 55%), var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 20px 24px; border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #151927, #121620);
+      position: sticky; top: 0; z-index: 10;
+    }
+    h1 { margin: 0; font-size: 20px; letter-spacing: .3px; }
+    .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+    .u-flex { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+    .controls { background: var(--panel); border: 1px solid var(--border); padding: 14px; border-radius: 12px; }
+    .controls label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; }
+    .controls .row { display: grid; grid-template-columns: repeat(6, minmax(160px, 1fr)); gap: 12px; }
+    .controls input[type="number"], .controls select, .controls input[type="range"] { width: 100%; padding: 10px; border-radius: 10px; background: var(--card); border: 1px solid var(--border); color: var(--text); }
+    .controls .hint { font-size: 11px; color: var(--muted); margin-top: 6px; grid-column: 1 / -1; }
+
+    .btn { appearance: none; border: 1px solid var(--border); background: linear-gradient(180deg, #20304f, #1a2742); color: #eaf1ff; padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+    .btn:hover { filter: brightness(1.05); }
+    .btn.secondary { background: #1d2333; }
+
+    .drop {
+      margin-top: 16px; background: repeating-linear-gradient(135deg, #1a2132, #1a2132 8px, #182033 8px, #182033 16px);
+      border: 2px dashed #3a4663; border-radius: 16px; padding: 24px; text-align: center; position: relative; transition: .15s ease;
+    }
+    .drop.dragover { background: #1e2740; border-color: var(--accent); box-shadow: 0 0 0 4px #4f8cff22 inset; }
+    .drop h2 { margin: 0 0 6px; font-size: 18px; }
+    .drop p { margin: 0; color: var(--muted); }
+    .drop input[type=file] { display: none; }
+    .drop .actions { margin-top: 12px; }
+
+    .preview { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    .canvasWrap, .imgWrap { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+    .canvasWrap header, .imgWrap header { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    canvas, img { width: 100%; height: auto; display: block; border-radius: 8px; }
+
+    .results { margin-top: 20px; }
+    .results header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+
+    .swatch { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; position: relative; }
+    .swatch .chip { height: 84px; border-bottom: 1px solid var(--border); }
+    .swatch .meta { padding: 10px; font-size: 13px; display: grid; gap: 6px; }
+    .swatch .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+    .tag { display: inline-flex; gap: 6px; align-items: center; background: #111520; border: 1px solid var(--border); padding: 5px 8px; border-radius: 999px; font-size: 12px; color: var(--muted); }
+    .copy { cursor: pointer; font-size: 12px; color: var(--accent-2); }
+    .small { font-size: 12px; color: var(--muted); }
+
+    .pair { display: grid; grid-template-columns: 1fr 1fr; }
+
+    .footer { margin: 36px 0; color: var(--muted); font-size: 12px; }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; padding: 2px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; background: #0e1320; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Képszín‑elemző</h1>
+    <div class="sub">Dobd rá, <span class="kbd">Ctrl+V</span>-vel illeszd be, vagy töltsd fel – többféle algoritmus: legsötétebb/legvilágosabb, legtelítettebb, komplementer párok, domináns paletta (k‑means), rács‑mintavételezés (100×100).</div>
+  </header>
+
+  <div class="wrap">
+    <section class="controls">
+      <div class="row">
+        <div>
+          <label for="method">Módszer</label>
+          <select id="method">
+            <option value="grid" selected>Rács‑mintavételezés (100×100 átlag)</option>
+            <option value="darkest">Legsötétebb 10</option>
+            <option value="brightest">Legvilágosabb 10</option>
+            <option value="dark_and_bright">Sötét + világos (10‑10)</option>
+            <option value="saturated">Legtelítettebb 10</option>
+            <option value="kmeans">Domináns paletta (k‑means)</option>
+            <option value="complements">Komplementer párok</option>
+          </select>
+        </div>
+        <div>
+          <label for="count">Színek száma (N)</label>
+          <input id="count" type="number" min="2" max="64" value="10" />
+        </div>
+        <div>
+          <label for="tile">Rács méret (px)</label>
+          <input id="tile" type="number" min="4" max="400" value="100" />
+        </div>
+        <div>
+          <label for="tolerance">Összevonási tolerancia (ΔE, 0‑50)</label>
+          <input id="tolerance" type="range" min="0" max="50" value="12" />
+        </div>
+        <div>
+          <label for="maxside">Feldolg. max. képméret</label>
+          <select id="maxside">
+            <option value="1024">1024 px</option>
+            <option value="1600" selected>1600 px</option>
+            <option value="2048">2048 px</option>
+            <option value="full">Teljes felbontás</option>
+          </select>
+        </div>
+        <div style="display:flex; align-items:end; gap:8px;">
+          <button id="btnAnalyze" class="btn">Elemzés újra</button>
+          <button id="btnExport" class="btn secondary">Export CSV</button>
+        </div>
+        <div class="hint">Tipp: A rács‑mintavételezés az alapértelmezett (100×100 px területek átlagszíne). A ΔE érték növelésével a hasonló színek összeolvadnak.
+          Beillesztéshez használd a <span class="kbd">Ctrl+V</span>-t (Windows) / <span class="kbd">Cmd+V</span> (Mac).
+        </div>
+      </div>
+    </section>
+
+    <section class="drop" id="drop">
+      <h2>Dobd ide a képet</h2>
+      <p>…vagy kattints feltöltéshez, vagy illeszd be a vágólapról (<span class="kbd">Ctrl+V</span>)</p>
+      <div class="actions">
+        <label class="btn">
+          <input id="file" type="file" accept="image/*" />Kép feltöltése
+        </label>
+      </div>
+    </section>
+
+    <section class="preview" id="preview" style="display:none;">
+      <div class="imgWrap">
+        <header>
+          <span>Eredeti kép</span>
+          <span class="small" id="imgInfo"></span>
+        </header>
+        <img id="img" alt="Előkép" />
+      </div>
+      <div class="canvasWrap">
+        <header>
+          <span>Feldolgozott vászon</span>
+          <span class="small" id="canInfo"></span>
+        </header>
+        <canvas id="canvas"></canvas>
+      </div>
+    </section>
+
+    <section class="results" id="results" style="display:none;">
+      <header>
+        <div class="u-flex">
+          <strong>Eredmények</strong>
+          <span class="small" id="stats"></span>
+        </div>
+      </header>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <div class="footer">Kattints bármelyik hex kódra a másoláshoz. A komplementer pároknál a két szín egymás mellett jelenik meg. – Készítette: te + ChatGPT</div>
+  </div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ===== Utilities =====
+  const $ = (sel) => document.querySelector(sel);
+  const clamp = (x, lo, hi) => Math.min(Math.max(x, lo), hi);
+  const toHex2 = (n) => n.toString(16).padStart(2, '0');
+  const rgbToHex = ({r,g,b}) => `#${toHex2(r)}${toHex2(g)}${toHex2(b)}`;
+  const hexToRgb = (hex) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+    if (!m) return null;
+    const int = parseInt(m[1], 16);
+    return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+  };
+  const copyText = async (text) => {
+    try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
+  };
+
+  // sRGB -> linear
+  const srgbToLinear = (c) => {
+    c /= 255; return (c <= 0.04045) ? (c / 12.92) : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  // Linear -> sRGB 0..255
+  const linearToSrgb255 = (c) => {
+    const v = (c <= 0.0031308) ? (12.92 * c) : (1.055 * Math.pow(c, 1/2.4) - 0.055);
+    return Math.round(clamp(v, 0, 1) * 255);
+  };
+  const luminance = ({r,g,b}) => 0.2126*srgbToLinear(r) + 0.7152*srgbToLinear(g) + 0.0722*srgbToLinear(b);
+
+  // RGB -> HSL (0..360, 0..1, 0..1)
+  const rgbToHsl = ({r,g,b}) => {
+    r/=255; g/=255; b/=255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+    let h, s, l = (max+min)/2;
+    if (max === min) { h = s = 0; }
+    else {
+      const d = max - min;
+      s = l > .5 ? d / (2 - max - min) : d / (max + min);
+      switch(max){
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h *= 60;
+    }
+    return {h, s, l};
+  };
+  // H, S, L -> RGB
+  const hslToRgb = (h, s, l) => {
+    h = ((h % 360) + 360) % 360;
+    const c = (1 - Math.abs(2*l - 1)) * s;
+    const x = c * (1 - Math.abs((h/60) % 2 - 1));
+    const m = l - c/2;
+    let r=0, g=0, b=0;
+    if (0<=h && h<60) { r=c; g=x; b=0; }
+    else if (60<=h && h<120) { r=x; g=c; b=0; }
+    else if (120<=h && h<180) { r=0; g=c; b=x; }
+    else if (180<=h && h<240) { r=0; g=x; b=c; }
+    else if (240<=h && h<300) { r=x; g=0; b=c; }
+    else { r=c; g=0; b=x; }
+    return {
+      r: Math.round((r+m)*255),
+      g: Math.round((g+m)*255),
+      b: Math.round((b+m)*255)
+    };
+  };
+
+  // RGB -> XYZ -> Lab (D65)
+  const rgbToXyz = ({r,g,b}) => {
+    let R = srgbToLinear(r), G = srgbToLinear(g), B = srgbToLinear(b);
+    // sRGB D65
+    const X = R*0.4124564 + G*0.3575761 + B*0.1804375;
+    const Y = R*0.2126729 + G*0.7151522 + B*0.0721750;
+    const Z = R*0.0193339 + G*0.1191920 + B*0.9503041;
+    return {X, Y, Z};
+  };
+  const xyzToLab = ({X,Y,Z}) => {
+    // D65 reference white
+    const Xn=0.95047, Yn=1.00000, Zn=1.08883;
+    const f = (t) => t > 0.008856 ? Math.cbrt(t) : (7.787 * t + 16/116);
+    const fx=f(X/Xn), fy=f(Y/Yn), fz=f(Z/Zn);
+    return { L: 116*fy - 16, a: 500*(fx - fy), b: 200*(fy - fz) };
+  };
+  const rgbToLab = (rgb) => xyzToLab(rgbToXyz(rgb));
+  const deltaE76 = (lab1, lab2) => {
+    const dL = lab1.L - lab2.L; const da = lab1.a - lab2.a; const db = lab1.b - lab2.b;
+    return Math.sqrt(dL*dL + da*da + db*db);
+  };
+
+  const averageColor = (data, width, height, x0, y0, w, h) => {
+    let r=0,g=0,b=0,cnt=0;
+    const x1 = Math.min(x0 + w, width); const y1 = Math.min(y0 + h, height);
+    for(let y=y0; y<y1; y++){
+      let idx = (y*width + x0) * 4;
+      for(let x=x0; x<x1; x++){
+        r += data[idx]; g += data[idx+1]; b += data[idx+2]; cnt++; idx += 4;
+      }
+    }
+    if (cnt === 0) return {r:0,g:0,b:0};
+    return { r: Math.round(r/cnt), g: Math.round(g/cnt), b: Math.round(b/cnt) };
+  };
+
+  const quantizeByDeltaE = (colors, deltaE=12) => {
+    const merged = [];
+    for (const c of colors) {
+      const lab = c.lab || rgbToLab(c);
+      let found = false;
+      for (const m of merged) {
+        if (deltaE76(lab, m.lab) <= deltaE) {
+          // average into cluster
+          m.r = Math.round((m.r*m.n + c.r) / (m.n+1));
+          m.g = Math.round((m.g*m.n + c.g) / (m.n+1));
+          m.b = Math.round((m.b*m.n + c.b) / (m.n+1));
+          m.lab = rgbToLab({r:m.r,g:m.g,b:m.b});
+          m.n++;
+          found = true; break;
+        }
+      }
+      if (!found) merged.push({r:c.r,g:c.g,b:c.b, lab, n:1});
+    }
+    return merged;
+  };
+
+  const kmeans = (colors, k=10, iters=8) => {
+    if (colors.length === 0) return [];
+    // init centroids by random pick
+    const cents = Array.from({length: Math.min(k, colors.length)}, (_,i)=>({...colors[(i*997) % colors.length]}));
+    for (let it=0; it<iters; it++) {
+      const groups = Array.from({length: cents.length}, ()=>({r:0,g:0,b:0,n:0}));
+      for (const c of colors) {
+        let bi=0, bd=1e9;
+        for (let i=0;i<cents.length;i++){
+          const ci=cents[i];
+          const d=(c.r-ci.r)*(c.r-ci.r)+(c.g-ci.g)*(c.g-ci.g)+(c.b-ci.b)*(c.b-ci.b);
+          if (d<bd){bd=d;bi=i;}
+        }
+        const g=groups[bi]; g.r+=c.r; g.g+=c.g; g.b+=c.b; g.n++;
+      }
+      for (let i=0;i<cents.length;i++){
+        const g=groups[i]; if (g.n>0) cents[i]={r:Math.round(g.r/g.n), g:Math.round(g.g/g.n), b:Math.round(g.b/g.n)};
+      }
+    }
+    // unique by hex
+    const uniq = {};
+    for (const c of cents){ uniq[rgbToHex(c).toLowerCase()]=c; }
+    return Object.values(uniq);
+  };
+
+  const makeComplement = ({r,g,b}) => ({ r: 255 - r, g: 255 - g, b: 255 - b });
+
+  // ===== DOM refs =====
+  const els = {
+    drop: $('#drop'), file: $('#file'), img: $('#img'), imgInfo: $('#imgInfo'),
+    canvas: $('#canvas'), canInfo: $('#canInfo'), preview: $('#preview'),
+    method: $('#method'), count: $('#count'), tile: $('#tile'), tolerance: $('#tolerance'),
+    maxside: $('#maxside'), analyze: $('#btnAnalyze'), export: $('#btnExport'),
+    results: $('#results'), grid: $('#grid'), stats: $('#stats')
+  };
+
+  let currentImage = null; // HTMLImageElement
+  let currentBitmap = null; // ImageBitmap for fast draw when available
+
+  // ===== Image loading =====
+  const loadFromFile = (file) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(new Error('Kép betöltési hiba.')); };
+    img.src = url;
+  });
+
+  const drawImageToCanvas = async (img, maxSideSel) => {
+    const c = els.canvas; const ctx = c.getContext('2d', { willReadFrequently: true });
+    let w = img.naturalWidth, h = img.naturalHeight;
+    const maxSide = (maxSideSel === 'full') ? Math.max(w,h) : parseInt(maxSideSel,10);
+    if (Math.max(w,h) > maxSide) {
+      const s = maxSide / Math.max(w,h); w = Math.round(w*s); h = Math.round(h*s);
+    }
+    c.width = w; c.height = h;
+    ctx.clearRect(0,0,w,h);
+    // Use createImageBitmap if possible for performance
+    try {
+      if (!currentBitmap) currentBitmap = await createImageBitmap(img);
+      ctx.drawImage(currentBitmap, 0, 0, w, h);
+    } catch {
+      ctx.drawImage(img, 0, 0, w, h);
+    }
+    els.img.src = img.src; // preview original
+    els.preview.style.display = '';
+    els.imgInfo.textContent = `${img.naturalWidth}×${img.naturalHeight} px`;
+    els.canInfo.textContent = `${w}×${h} px`;    
+    return { width: w, height: h, ctx };
+  };
+
+  // ===== Sampling & Analysis =====
+  const getImageData = (ctx, w, h) => ctx.getImageData(0,0,w,h);
+
+  const buildGridSamples = (data, width, height, tileSize) => {
+    const out = [];
+    for (let y=0; y<height; y+=tileSize) {
+      for (let x=0; x<width; x+=tileSize) {
+        out.push( averageColor(data, width, height, x, y, tileSize, tileSize) );
+      }
+    }
+    return out;
+  };
+
+  const uniqueByHex = (arr) => {
+    const seen = new Set();
+    const res = [];
+    for (const c of arr) {
+      const hex = rgbToHex(c).toLowerCase();
+      if (!seen.has(hex)) { seen.add(hex); res.push(c); }
+    }
+    return res;
+  };
+
+  const analyze = async () => {
+    if (!currentImage) return;
+    const { ctx, width, height } = await drawImageToCanvas(currentImage, els.maxside.value);
+    const imgData = getImageData(ctx, width, height);
+    const data = imgData.data;
+
+    // Sampling via grid as base for all methods (covers teljes kép)
+    const tileSize = clamp(parseInt(els.tile.value,10)||100, 4, 400);
+    let samples = buildGridSamples(data, width, height, tileSize);
+
+    const tol = parseInt(els.tolerance.value,10) || 0;
+    samples = quantizeByDeltaE(samples, tol);
+
+    const method = els.method.value;
+    const N = clamp(parseInt(els.count.value,10)||10, 2, 64);
+
+    let result = [];
+    let metaNote = '';
+
+    if (method === 'grid') {
+      // Just show the reduced unique grid colors, top N by occurrence (n)
+      samples.sort((a,b)=>b.n-a.n);
+      result = samples.slice(0, N);
+      metaNote = `Rács átlagok, ΔE=${tol}`;
+    }
+    else if (method === 'darkest') {
+      samples.sort((a,b)=>luminance(a)-luminance(b));
+      result = uniqueByHex(samples).slice(0, N);
+      metaNote = `Legsötétebb, ΔE=${tol}`;
+    }
+    else if (method === 'brightest') {
+      samples.sort((a,b)=>luminance(b)-luminance(a));
+      result = uniqueByHex(samples).slice(0, N);
+      metaNote = `Legvilágosabb, ΔE=${tol}`;
+    }
+    else if (method === 'dark_and_bright') {
+      const uniq = uniqueByHex(samples);
+      const byDark = [...uniq].sort((a,b)=>luminance(a)-luminance(b)).slice(0,N);
+      const byBright = [...uniq].sort((a,b)=>luminance(b)-luminance(a)).slice(0,N);
+      // Interleave for display
+      result = byDark.map((c,i)=>({type:'pair', left:c, right:byBright[i]}));
+      metaNote = `Sötét + világos (N=${N}), ΔE=${tol}`;
+    }
+    else if (method === 'saturated') {
+      samples.sort((a,b)=>rgbToHsl(b).s - rgbToHsl(a).s);
+      result = uniqueByHex(samples).slice(0, N);
+      metaNote = `Legtelítettebb, ΔE=${tol}`;
+    }
+    else if (method === 'kmeans') {
+      // Use more dense sampling for kmeans: sub-sample pixels every step
+      const step = Math.max(2, Math.floor(Math.min(width, height) / 200));
+      const px = [];
+      for (let y=0; y<height; y+=step){
+        for (let x=0; x<width; x+=step){
+          const i=(y*width+x)*4; px.push({r:data[i], g:data[i+1], b:data[i+2]});
+        }
+      }
+      const tol2 = clamp(tol, 0, 35);
+      const base = quantizeByDeltaE(px, tol2);
+      result = kmeans(base, N, 10);
+      metaNote = `k‑means K=${N}, minta lépés=${step}, ΔE=${tol2}`;
+    }
+    else if (method === 'complements') {
+      // Find complementary pairs present in the image (hue‑alapú párosítás)
+      const uniq = uniqueByHex(samples).map(c=>({ ...c, hsl: rgbToHsl(c) })).filter(c=>c.hsl.s > 0.15);
+      // Bin by hue (0..359) to 2° bins
+      const bins = new Map();
+      const keyOf = (h) => Math.round(h) % 360;
+      for (const c of uniq) {
+        const k = keyOf(c.hsl.h);
+        if (!bins.has(k)) bins.set(k, []);
+        bins.get(k).push(c);
+      }
+      const used = new Set();
+      const pairs = [];
+      for (const c of uniq) {
+        const h = Math.round(c.hsl.h);
+        const target = (h + 180) % 360;
+        // search ±6° around target
+        let mate = null;
+        for (let off=-6; off<=6; off++){
+          const arr = bins.get(keyOf(target + off));
+          if (!arr) continue;
+          for (const d of arr){
+            const id = rgbToHex(d);
+            if (d!==c && !used.has(id)) { mate = d; break; }
+          }
+          if (mate) break;
+        }
+        const idC = rgbToHex(c);
+        if (mate && !used.has(idC)) {
+          used.add(idC); used.add(rgbToHex(mate));
+          pairs.push({ left: c, right: mate });
+          if (pairs.length >= N) break;
+        }
+      }
+      result = pairs.map(p=>({type:'pair', left:p.left, right:p.right}));
+      metaNote = `Komplementer párok, max ${N} pár, ΔE=${tol}`;
+    }
+
+    renderResults(result, method, metaNote, {w: width, h: height, tileSize, count: N});
+  };
+
+  // ===== Render =====
+  const renderResults = (result, method, note, meta) => {
+    els.results.style.display = '';
+    els.grid.innerHTML = '';
+    if (!result || result.length===0) {
+      els.stats.textContent = 'Nincs megjeleníthető eredmény.';
+      return;
+    }
+
+    const addSwatch = (color, extra=[]) => {
+      const hex = rgbToHex(color);
+      const lum = luminance(color);
+      const hsl = rgbToHsl(color);
+      const el = document.createElement('div');
+      el.className = 'swatch';
+      el.innerHTML = `
+        <div class="chip" style="background:${hex}"></div>
+        <div class="meta">
+          <div class="row"><span class="tag">HEX</span> <span class="copy" data-copy="${hex}">${hex}</span></div>
+          <div class="row"><span class="tag">RGB</span> <span class="small">${color.r}, ${color.g}, ${color.b}</span></div>
+          <div class="row"><span class="tag">HSL</span> <span class="small">${Math.round(hsl.h)}°, ${(hsl.s*100|0)}%, ${(hsl.l*100|0)}%</span></div>
+          <div class="row"><span class="tag">Luma</span> <span class="small">${(lum*100).toFixed(1)}</span></div>
+          ${extra.join('')}
+        </div>`;
+      els.grid.appendChild(el);
+    };
+
+    const addPair = (left, right) => {
+      const hexL = rgbToHex(left), hexR = rgbToHex(right);
+      const el = document.createElement('div');
+      el.className = 'swatch';
+      el.innerHTML = `
+        <div class="pair">
+          <div class="chip" style="background:${hexL}"></div>
+          <div class="chip" style="background:${hexR}"></div>
+        </div>
+        <div class="meta">
+          <div class="row"><span class="tag">BAL</span> <span class="copy" data-copy="${hexL}">${hexL}</span></div>
+          <div class="row"><span class="tag">JOBB</span> <span class="copy" data-copy="${hexR}">${hexR}</span></div>
+          <div class="row"><span class="tag">PÁR</span> <span class="small">Komplementer hue ~180°</span></div>
+        </div>`;
+      els.grid.appendChild(el);
+    };
+
+    if (method === 'dark_and_bright' || method === 'complements') {
+      for (const item of result) {
+        if (item.type === 'pair') addPair(item.left, item.right);
+      }
+    } else {
+      for (const c of result) {
+        const comp = makeComplement(c);
+        addSwatch(c, [
+          `<div class="row"><span class="tag">Kompl.</span> <span class="small"><span class="copy" data-copy="${rgbToHex(comp)}">${rgbToHex(comp)}</span></span></div>`
+        ]);
+      }
+    }
+
+    els.stats.textContent = `${result.length} elem • ${note} • Kép: ${meta.w}×${meta.h}px, rács=${meta.tileSize}px`;
+
+    // activate copy handlers
+    els.grid.querySelectorAll('.copy').forEach(el => {
+      el.addEventListener('click', async () => {
+        const ok = await copyText(el.dataset.copy);
+        el.textContent = ok ? '✔️ Másolva' : el.dataset.copy;
+        setTimeout(()=>{ el.textContent = el.dataset.copy; }, 900);
+      });
+    });
+  };
+
+  // ===== Event wiring =====
+  const handleFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.type.startsWith('image/')) { alert('Kérlek képfájlt adj meg.'); return; }
+    try {
+      currentBitmap?.close?.(); currentBitmap = null; // reset bitmap
+      currentImage = await loadFromFile(file);
+      await analyze();
+    } catch (e) {
+      console.error(e); alert('Nem sikerült betölteni a képet.');
+    }
+  };
+
+  els.file.addEventListener('change', (e) => handleFiles(e.target.files));
+
+  // Drag & drop
+  const onDragOver = (e) => { e.preventDefault(); els.drop.classList.add('dragover'); };
+  const onDragLeave = () => els.drop.classList.remove('dragover');
+  const onDrop = (e) => {
+    e.preventDefault(); els.drop.classList.remove('dragover');
+    const dt = e.dataTransfer; if (!dt) return;
+    if (dt.files && dt.files.length) handleFiles(dt.files);
+  };
+  ['dragenter','dragover'].forEach(evt=>els.drop.addEventListener(evt, onDragOver));
+  ['dragleave','drop'].forEach(evt=>els.drop.addEventListener(evt, onDragLeave));
+  els.drop.addEventListener('drop', onDrop);
+
+  // Paste (Ctrl+V)
+  window.addEventListener('paste', async (e) => {
+    const items = e.clipboardData?.items || [];
+    for (const it of items) {
+      if (it.type.startsWith('image/')) {
+        const file = it.getAsFile();
+        if (file) { e.preventDefault(); await handleFiles([file]); return; }
+      }
+    }
+    // If plain text looks like a data URL image, try it
+    const text = e.clipboardData?.getData('text');
+    if (text && text.startsWith('data:image/')) {
+      e.preventDefault();
+      try {
+        const res = await fetch(text); const blob = await res.blob();
+        const file = new File([blob], 'pasted.png', {type: blob.type});
+        await handleFiles([file]);
+      } catch {}
+    }
+  });
+
+  // Re-analyze on controls change
+  [els.method, els.count, els.tile, els.tolerance, els.maxside].forEach(el => {
+    el.addEventListener('change', () => analyze());
+  });
+  els.analyze.addEventListener('click', () => analyze());
+
+  // Export CSV
+  els.export.addEventListener('click', () => {
+    const rows = [];
+    document.querySelectorAll('#grid .swatch').forEach(card => {
+      const chips = card.querySelectorAll('.copy');
+      if (chips.length === 1) {
+        const hex = chips[0].dataset.copy;
+        const rgb = card.querySelector('.row:nth-child(2) .small')?.textContent || '';
+        const hsl = card.querySelector('.row:nth-child(3) .small')?.textContent || '';
+        rows.push([hex, rgb, hsl]);
+      } else if (chips.length >= 2) {
+        const left = chips[0].dataset.copy; const right = chips[1].dataset.copy;
+        rows.push([left, right, 'komplementer pár']);
+      }
+    });
+    if (!rows.length) { alert('Nincs exportálható adat.'); return; }
+    const csv = ['HEX1,HEX2/RGB,MEGJEGYZÉS'].concat(rows.map(r=>r.map(v=>`"${(v||'').replaceAll('"','""')}"`).join(','))).join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'szinek.csv'; a.click(); URL.revokeObjectURL(url);
+  });
+
+  // Initial state text
+  $('#stats').textContent = 'Tölts fel vagy illessz be egy képet az elemzéshez.';
+})();
+</script>
+</body>
+</html>
